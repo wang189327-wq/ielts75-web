@@ -170,10 +170,10 @@ function learnWithDrill(current){
  return {...next,learningPlan:{...next.learningPlan,drill:{seen,lastReviewed:ids?.length?n:old.lastReviewed,pending:ids?.length?{ids,index:0,retry:[],round:0}:null}}};
 }
 function renderLearningDrill(){
- const drill=state.learningPlan.drill,p=drill.pending,card=state.deck.cards.find(x=>x.id===p.ids[p.index]);
+ const drill=state.learningPlan.drill,p=drill.pending,primary=state.deck.cards.find(x=>x.id===p.ids[p.index]),card=state.learningPlan.scope==='sentence'?([primary,...(primary.additionalSenses||[])].find(x=>x.source.sentence===state.learningPlan.sentence)||primary):primary;
  const panel=el('section','panel');panel.id='learning-drill';append(panel,el('h2','','新词拼写复习'),el('p','muted',(p.index+1)+' / '+p.ids.length+(p.round?' · 错词再练':'')),el('p','meaning',card.meaning));
  const input=el('input','answer-input');input.autocomplete='off';input.spellcheck=false;input.autocapitalize='none';input.setAttribute('aria-label','新词复习英文答案');const feedback=el('div');let submitted=false,ok=false;
- function check(){if(submitted)return;submitted=true;ok=C.checkAnswer(input.value,card.spellingAnswers||[card.word]);const record={id:card.id,mode:'spelling',correct:ok,date:C.localDate(),at:new Date().toISOString(),eventId:crypto.randomUUID()};if(!persist({...state,results:[...state.results,record].slice(-50000)})){submitted=false;return;}input.disabled=true;submit.disabled=true;feedback.textContent=(ok?'回答正确：':'再记一次：')+card.word+' · '+card.meaning;next.disabled=false;}
+ function check(){if(submitted)return;submitted=true;ok=C.checkAnswer(input.value,card.spellingAnswers||[card.word]);const record={id:primary.id,mode:'spelling',correct:ok,date:C.localDate(),at:new Date().toISOString(),eventId:crypto.randomUUID()};if(!persist({...state,results:[...state.results,record].slice(-50000)})){submitted=false;return;}input.disabled=true;submit.disabled=true;feedback.textContent=(ok?'回答正确：':'再记一次：')+card.word+' · '+card.meaning;next.disabled=false;}
  const submit=btn('提交拼写',check,'primary wide'),next=btn('继续',()=>{if(!submitted)return;const retry=ok?[...p.retry]:[...p.retry,card.id];let pending={...p,index:p.index+1,retry};if(pending.index>=p.ids.length)pending=retry.length&&p.round<2?{ids:retry,index:0,retry:[],round:p.round+1}:null;if(persist({...state,learningPlan:{...state.learningPlan,drill:{...drill,pending}}})){render();window.scrollTo(0,0);}},'wide');next.disabled=true;input.onkeydown=e=>{if(e.key==='Enter')check();};append(panel,input,submit,feedback,next);append(host,panel);
 }
 function showLaunchAnimation(){

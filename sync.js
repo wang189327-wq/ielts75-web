@@ -38,9 +38,9 @@
    for(const r of merged.results)if(!remoteResults.has(r.eventId)){const {id,mode,correct,date,at,eventId}=r;uploads.push({kind:'result',id,mode,correct,date,...(at?{at}:{}),eventId});}
    // An empty batch registers the fingerprint without transferring any book content.
    for(let i=0;i<Math.max(uploads.length,1);i+=100){const batch=uploads.slice(i,i+100);await request('/v1/progress/'+encodeURIComponent(book),{fingerprint,learned:batch.filter(r=>r.kind==='learned').map(({kind,...r})=>r),results:batch.filter(r=>r.kind==='result').map(({kind,...r})=>r)});}
-   lastError='';const latest=config();if(latest.api===c.api&&latest.token===c.token)saveConfig({...latest,lastSync:new Date().toISOString()});
-   if(latest.enabled&&latest.api===c.api&&latest.token===c.token){if(root.onCloudSyncSaved?.(merged)===false)throw Error('云端已同步，但本地保存失败，请重试');}
-  }catch(e){lastError=e.message;root.onNativeStatus?.('进度同步未完成：'+e.message+'。本地记录保留。');throw e;}finally{running=false;}
+   lastError='';const latest=config();
+   if(latest.enabled&&latest.api===c.api&&latest.token===c.token){if(root.onCloudSyncSaved?.(merged)===false)throw Error('云端已同步，但本地保存失败，请重试');if(root.BrowserStore)await root.BrowserStore.flush();saveConfig({...config(),lastSync:new Date().toISOString()});}
+  }catch(e){try{localStorage.setItem('ielts75-sync-dirty','1');}catch{}lastError=e.message;root.onNativeStatus?.('进度同步未完成：'+e.message+'。本地记录保留。');throw e;}finally{running=false;}
  }
  // Progress synchronization is explicitly requested by the user, never scheduled.
  function schedule(){}
