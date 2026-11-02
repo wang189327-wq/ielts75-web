@@ -1,7 +1,7 @@
 {
-  "versionCode": 20,
-  "versionName": "1.2",
-  "downloadUrl": "https://github.com/wang189327-wq/ielts75-web/releases/download/v1.2/ielts75-1.2-no-book.apk",
-  "sha256": "ade11d43710f4e68b4f2c6a1d7e6890a5072b19ce494e6132fae838bf04c975f",
+  "versionCode": 21,
+  "versionName": "1.3",
+  "downloadUrl": "https://github.com/wang189327-wq/ielts75-web/releases/download/v1.3/ielts75-1.3-no-book.apk",
+  "sha256": "96e62edac282c2fdc46395d81be6db7bc1a009f32f3eca5e46c0bb0f78f98a76",
   "notes": "设置页手动检查更新；不在启动或后台自动检查。更新包不附带书籍，覆盖安装后继续使用设备本地词库。"
 }

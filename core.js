@@ -34,6 +34,7 @@ function validateState(s){
  for(const r of s.results){if(!plain(r)||!ids.has(r.id)||!MODES.includes(r.mode)||typeof r.correct!=='boolean'||!dateOK(r.date))fail('备份含无效复习记录。');}
  if(s.cursor!==null&&s.cursor!==undefined&&!ids.has(s.cursor))fail('备份含无效学习位置。');
  if(s.learningPlan!==undefined&&s.learningPlan!==null){const p=s.learningPlan;if(!plain(p)||!['count','sentence'].includes(p.scope)||!Array.isArray(p.ids)||!p.ids.length||p.ids.length>20000||new Set(p.ids).size!==p.ids.length||p.ids.some(id=>!ids.has(id))||(p.scope==='sentence'&&(!Number.isSafeInteger(p.sentence)||p.sentence<1||p.sentence>100)))fail('备份含无效的新词学习安排。');}
+ if(s.learningPlan?.drill!==undefined){const d=s.learningPlan.drill;if(!plain(d)||!Array.isArray(d.seen)||d.seen.some(id=>!s.learningPlan.ids.includes(id))||new Set(d.seen).size!==d.seen.length||!Number.isInteger(d.lastReviewed)||d.lastReviewed<0||d.lastReviewed>d.seen.length)fail('新词复习安排无效。');if(d.pending){const p=d.pending;if(!plain(p)||!Array.isArray(p.ids)||!p.ids.length||p.ids.some(id=>!d.seen.includes(id))||!Number.isInteger(p.index)||p.index<0||p.index>=p.ids.length||!Array.isArray(p.retry)||p.retry.some(id=>!p.ids.includes(id))||!Number.isInteger(p.round)||p.round<0||p.round>2)fail('新词复习题目无效。');}}
  if(s.learningPlan?.startedByUser!==undefined&&typeof s.learningPlan.startedByUser!=='boolean')fail('学习启动状态无效。');
  return s;
 }
