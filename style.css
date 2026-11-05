@@ -101,3 +101,12 @@ main .learning-reminder{white-space:pre-line;font-size:min(calc(13px * var(--rea
 
 /* Compact closed settings cards; retain a 44px touch target. */
 main .panel.settings-collapsed{padding-top:4px;padding-bottom:4px}
+
+.card-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.card-heading .eyebrow{min-width:0;overflow-wrap:anywhere}
+button.favorite-star{flex:0 0 44px;width:44px;height:44px;min-height:44px;padding:0;border:0;background:transparent;color:#697b80;font-size:32px;line-height:1;display:grid;place-items:center;border-radius:50%}
+button.favorite-star.is-favorite{color:#c88b09;background:#fff6d8}
+button.favorite-star:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+.favorite-range{display:flex;align-items:center;gap:8px;margin:8px 0}
+.favorite-range input{min-width:0;flex:1;width:0}
+@media(max-width:420px){.favorite-range{flex-wrap:wrap}.favorite-range input{flex-basis:100%;width:100%}.favorite-range span{font-size:13px}}

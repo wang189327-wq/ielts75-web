@@ -22,22 +22,28 @@
   let c=config();if(running||!c.enabled||!c.token||!root.ieltsSyncState)return;const initial=root.ieltsSyncState();if(!initial)return;
   running=true;try{
    c=await renew(c);
+   const syncRequest=(path,body)=>{const latest=config();if(!latest.enabled||latest.api!==c.api||latest.token!==c.token)throw Error('账号状态已改变');return request(path,body,c);};
    if(initial.results.some(r=>!r.eventId)){const normalized=await Promise.all(initial.results.map(async(r,i)=>r.eventId?r:{...r,eventId:'legacy-'+await digest(JSON.stringify(r)+'|'+i)}));if(root.ieltsSyncState()!==initial)throw Error('学习记录正在变化，稍后自动重试');if(!root.ieltsApplySync({...initial,results:normalized},true))throw Error('旧复习记录迁移保存失败');}
    const fingerprint=await digest(initial.deck.bookId+'\n'+initial.deck.cards.map(x=>x.id).sort().join('\n'));
    const book=initial.deck.bookId,valid=new Set(initial.deck.cards.map(x=>x.id));
+   const favoritePath='/v1/favorites/'+encodeURIComponent(book),remoteFavorites=[];let favoriteCursor='';
+   do{let data;try{data=await syncRequest(favoritePath+'?fingerprint='+fingerprint+(favoriteCursor?'&cursor='+encodeURIComponent(favoriteCursor):''));}catch(e){if(e.status===404)throw Error('阿里云后端尚未支持收藏同步，请先部署1.4同步包');throw e;}if(data.favoritesSync!==true||!Array.isArray(data.records))throw Error('请先更新阿里云1.4收藏同步后端');remoteFavorites.push(...data.records);favoriteCursor=data.next||'';}while(favoriteCursor);
    const remoteLearned={},remoteResults=new Map();let cursor='';
-   do{const data=await request('/v1/progress/'+encodeURIComponent(book)+'?fingerprint='+fingerprint+(cursor?'&cursor='+encodeURIComponent(cursor):''));for(const r of data.records){if(!valid.has(r.id))continue;if(r.kind==='learned')remoteLearned[r.id]={date:r.date};else{const {kind,...record}=r;remoteResults.set(r.eventId,record);}}cursor=data.next||'';}while(cursor);
+   do{const data=await syncRequest('/v1/progress/'+encodeURIComponent(book)+'?fingerprint='+fingerprint+(cursor?'&cursor='+encodeURIComponent(cursor):''));for(const r of data.records){if(!valid.has(r.id))continue;if(r.kind==='learned')remoteLearned[r.id]={date:r.date};else{const {kind,...record}=r;remoteResults.set(r.eventId,record);}}cursor=data.next||'';}while(cursor);
    if(!config().enabled||config().token!==c.token)throw Error('账号状态已改变');
    let current=root.ieltsSyncState();if(!current||current.deck.bookId!==book)throw Error('同步期间词库已改变，请重试');
    const learned={...current.learned};for(const [id,r]of Object.entries(remoteLearned))if(!learned[id]||r.date<learned[id].date)learned[id]=r;
    const results=current.results;
    const mergedResults=new Map(results.map(r=>[r.eventId,r]));for(const [id,r]of remoteResults)if(!mergedResults.has(id))mergedResults.set(id,r);
-   const merged={...current,learned,results:[...mergedResults.values()].sort((a,b)=>(a.at||a.date).localeCompare(b.at||b.date)||a.eventId.localeCompare(b.eventId)).slice(-50000)};
+   let merged=root.IELTS.mergeFavorites(root.IELTS.prepareFavorites({...current,learned,results:[...mergedResults.values()].sort((a,b)=>(a.at||a.date).localeCompare(b.at||b.date)||a.eventId.localeCompare(b.eventId)).slice(-50000)}),remoteFavorites);
    if(JSON.stringify(merged)!==JSON.stringify(current)&&!root.ieltsApplySync(merged))throw Error('本地同步保存失败');
    const uploads=[];for(const [id,r]of Object.entries(merged.learned))if(!remoteLearned[id]||r.date<remoteLearned[id].date)uploads.push({kind:'learned',id,date:r.date});
    for(const r of merged.results)if(!remoteResults.has(r.eventId)){const {id,mode,correct,date,at,eventId}=r;uploads.push({kind:'result',id,mode,correct,date,...(at?{at}:{}),eventId});}
    // An empty batch registers the fingerprint without transferring any book content.
-   for(let i=0;i<Math.max(uploads.length,1);i+=100){const batch=uploads.slice(i,i+100);await request('/v1/progress/'+encodeURIComponent(book),{fingerprint,learned:batch.filter(r=>r.kind==='learned').map(({kind,...r})=>r),results:batch.filter(r=>r.kind==='result').map(({kind,...r})=>r)});}
+   for(let i=0;i<Math.max(uploads.length,1);i+=100){const batch=uploads.slice(i,i+100);await syncRequest('/v1/progress/'+encodeURIComponent(book),{fingerprint,learned:batch.filter(r=>r.kind==='learned').map(({kind,...r})=>r),results:batch.filter(r=>r.kind==='result').map(({kind,...r})=>r)});}
+   const remoteFavoriteMap=new Map(remoteFavorites.map(r=>[r.id,r]));
+   const favoriteUploads=Object.entries(merged.favoriteChanges||{}).map(([id,r])=>({id,...r})).filter(r=>JSON.stringify(r)!==JSON.stringify(remoteFavoriteMap.get(r.id)));
+   for(let i=0;i<favoriteUploads.length;i+=100){const data=await syncRequest(favoritePath,{fingerprint,favorites:favoriteUploads.slice(i,i+100)});if(!Array.isArray(data.records))throw Error('收藏同步响应无效，请重试');merged=root.IELTS.mergeFavorites(merged,data.records);}
    lastError='';const latest=config();
    if(latest.enabled&&latest.api===c.api&&latest.token===c.token){if(root.onCloudSyncSaved?.(merged)===false)throw Error('云端已同步，但本地保存失败，请重试');if(root.BrowserStore)await root.BrowserStore.flush();saveConfig({...config(),lastSync:new Date().toISOString()});}
   }catch(e){try{localStorage.setItem('ielts75-sync-dirty','1');}catch{}lastError=e.message;root.onNativeStatus?.('进度同步未完成：'+e.message+'。本地记录保留。');throw e;}finally{running=false;}

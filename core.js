@@ -26,10 +26,12 @@ function validateDeck(d){
  return d;
 }
 function sentenceNumbers(c){return [...new Set([c.source,...(c.sources||[]),...(c.additionalSenses||[]).map(x=>x.source)].map(x=>x.sentence))];}
-function emptyState(deck){return{schemaVersion:1,deck:validateDeck(deck),learned:{},results:[],cursor:null};}
+function emptyState(deck){return{schemaVersion:1,deck:validateDeck(deck),learned:{},results:[],favorites:{},cursor:null};}
 function validateState(s){
  if(!plain(s)||s.schemaVersion!==1||!plain(s.learned)||!Array.isArray(s.results)||s.results.length>50000)fail('备份格式无效。');validateDeck(s.deck);
  const ids=new Set(s.deck.cards.map(c=>c.id));
+ if(s.favorites!==undefined&&(!plain(s.favorites)||Object.entries(s.favorites).some(([id,value])=>!ids.has(id)||value!==true)))fail('备份含无效收藏记录。');
+ if(s.favoriteChanges!==undefined&&(!plain(s.favoriteChanges)||Object.entries(s.favoriteChanges).some(([id,r])=>!ids.has(id)||!validFavoriteChange(r)||r.active!==(s.favorites?.[id]===true))))fail('备份含无效收藏同步记录。');
  for(const [id,r] of Object.entries(s.learned)){if(!ids.has(id)||!plain(r)||!dateOK(r.date))fail('备份含无效学习记录。');}
  for(const r of s.results){if(!plain(r)||!ids.has(r.id)||!MODES.includes(r.mode)||typeof r.correct!=='boolean'||!dateOK(r.date))fail('备份含无效复习记录。');}
  if(s.cursor!==null&&s.cursor!==undefined&&!ids.has(s.cursor))fail('备份含无效学习位置。');
@@ -62,11 +64,25 @@ function startLearningPlan(state,{scope='count',count,sentence}){
 }
 function deferNewWord(state){const ids=learningQueue(state);return ids.length>1?{...state,cursor:ids[1]}:state;}
 function learnNextWord(state,date=localDate()){const ids=learningQueue(state);if(!ids.length)fail('本次新词已学完。');return{...markLearned(state,ids[0],date),cursor:ids[1]||null};}
-function selectWords(state,{scope='all',date,count},random=Math.random){
- let pool=state.deck.cards.filter(c=>Object.prototype.hasOwnProperty.call(state.learned,c.id));
+function favoriteWords(state){return state.deck.cards.filter(c=>state.favorites?.[c.id]===true).sort((a,b)=>a.order-b.order);}
+function validFavoriteChange(r){return plain(r)&&typeof r.active==='boolean'&&Number.isSafeInteger(r.updatedAt)&&r.updatedAt>0&&r.updatedAt<8640000000000000&&typeof r.changeId==='string'&&/^[-a-zA-Z0-9]{16,128}$/.test(r.changeId);}
+function newerFavorite(a,b){return !b||a.updatedAt>b.updatedAt||(a.updatedAt===b.updatedAt&&a.changeId>b.changeId);}
+function prepareFavorites(state){const favoriteChanges={...state.favoriteChanges};for(const id of Object.keys(state.favorites||{}))if(!favoriteChanges[id])favoriteChanges[id]={active:true,updatedAt:1,changeId:'legacy-favorite-0000'};return{...state,favoriteChanges};}
+function mergeFavorites(state,records){const valid=new Set(state.deck.cards.map(c=>c.id)),favoriteChanges={...state.favoriteChanges},favorites={...state.favorites};for(const {id,...r} of records){if(!valid.has(id))continue;if(!validFavoriteChange(r))fail('云端收藏记录格式无效。');if(newerFavorite(r,favoriteChanges[id])){favoriteChanges[id]=r;if(r.active)favorites[id]=true;else delete favorites[id];}}return{...state,favorites,favoriteChanges};}
+function toggleFavorite(state,id){if(!state.deck.cards.some(c=>c.id===id))fail('无效收藏词条。');const prepared=prepareFavorites(state),updatedAt=Math.max(Date.now(),...Object.values(prepared.favoriteChanges).map(r=>r.updatedAt+1));return mergeFavorites(prepared,[{id,active:!state.favorites?.[id],updatedAt,changeId:crypto.randomUUID()}]);}
+function selectWords(state,{scope='all',date,count,fromWord='',toWord=''},random=Math.random){
+ let pool=scope.startsWith('favorites')?favoriteWords(state):state.deck.cards.filter(c=>Object.prototype.hasOwnProperty.call(state.learned,c.id));
+ if(scope==='favorites-range'){
+  if(!pool.length)fail('还没有收藏单词，请先点亮单词卡右上角的星标。');
+  const from=pool.findIndex(c=>normalize(c.word)===normalize(fromWord)),to=pool.findIndex(c=>normalize(c.word)===normalize(toWord));
+  if(from<0||to<0)fail('请输入已收藏的起止英文单词（完整拼写）。');
+  if(from>to)fail('起始词应位于结束词之前，请按书本顺序选择。');
+  return pool.slice(from,to+1);
+ }
  if(scope==='date'){if(!dateOK(date))fail('请选择学习日期。');pool=pool.filter(c=>state.learned[c.id].date===date);if(!pool.length)fail('该日期还没有已学单词。');return pool.sort((a,b)=>a.order-b.order);}
- if(scope!=='all')fail('无效复习范围。');
- if(!Number.isSafeInteger(count)||count<1||count>pool.length)fail('请输入1至'+pool.length+'之间的整数，不能超过已学单词数。');
+ if(!['all','favorites'].includes(scope))fail('无效复习范围。');
+ if(!pool.length)fail(scope==='favorites'?'还没有收藏单词，请先点亮单词卡右上角的星标。':'还没有已学单词。');
+ if(!Number.isSafeInteger(count)||count<1||count>pool.length)fail('请输入1至'+pool.length+'之间的整数，不能超过'+(scope==='favorites'?'收藏':'已学')+'单词数。');
  pool=pool.slice();for(let i=pool.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}return pool.slice(0,count);
 }
 function buildQuestions(cards,modes){
@@ -89,5 +105,5 @@ function buildQuestions(cards,modes){
 function normalize(s){return s.trim().toLowerCase().replace(/[’‘]/g,"'").replace(/\s+/g,' ');}
 function checkAnswer(input,answers){return answers.some(a=>normalize(input)===normalize(a));}
 function questionCard(deck,q){const primary=deck.cards.find(c=>c.id===q.id);if(!primary)fail('找不到复习词条。');return [primary,...(primary.additionalSenses||[])][q.senseIndex||0]||primary;}
-return{MODES,sentenceNumbers,localDate,validateDeck,emptyState,validateState,mergeDeck,markLearned,selectWords,buildQuestions,checkAnswer,questionCard,learnedOn,learningQueue,startLearningPlan,deferNewWord,learnNextWord,sentenceProgress,mergeProgress};
+return{MODES,sentenceNumbers,localDate,validateDeck,emptyState,validateState,mergeDeck,markLearned,selectWords,buildQuestions,checkAnswer,questionCard,learnedOn,learningQueue,startLearningPlan,deferNewWord,learnNextWord,sentenceProgress,mergeProgress,favoriteWords,toggleFavorite,prepareFavorites,mergeFavorites};
 });

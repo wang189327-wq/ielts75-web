@@ -1,7 +1,7 @@
 {
-  "versionCode": 21,
-  "versionName": "1.3",
-  "downloadUrl": "https://github.com/wang189327-wq/ielts75-web/releases/download/v1.3/ielts75-1.3-no-book.apk",
-  "sha256": "9b4c6ae29936cb51bccc66193f5f28f580a04be46d0c68c70dcc87ecf31050b9",
-  "notes": "设置页手动检查更新；不在启动或后台自动检查。更新包不附带书籍，覆盖安装后继续使用设备本地词库。"
+  "versionCode": 24,
+  "versionName": "1.4",
+  "downloadUrl": "https://github.com/wang189327-wq/ielts75-web/releases/download/v1.4/ielts75-1.4-no-book.apk",
+  "sha256": "ef9ef51385c57b42ec90a9a46c4837ccdd4732243bf53970d0c22ba64cdf4544",
+  "notes": "新增单词收藏与收藏范围复习，支持收藏和取消收藏的手动云同步（服务器需部署1.4新版FC包）。覆盖安装保留本地词库和学习记录，更新包不附带书籍。仅设置页手动检查。"
 }

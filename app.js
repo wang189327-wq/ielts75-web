@@ -8,12 +8,12 @@ applyAppearance();
 let librarySentence='',libraryQuery='',libraryCard=null;
 let historyDate='',historyCard=null;
 let storageMode=localStorage.getItem('ielts75-mode')||'',webImportKind='deck';
-let state,tab='learn',queue=[],session=null,importKind='deck',toastTimer,reviewOptions={modes:['meaning'],scope:'all',count:20,date:''};
+let state,tab='learn',queue=[],session=null,importKind='deck',toastTimer,reviewOptions={modes:['meaning'],scope:'all',count:20,date:'',favoriteCount:20,fromWord:'',toWord:''};
 let cloudSavedSignature='',cloudSavedState=null,exitPending=false,cloudDeckCache='';
 const cloudMode=()=>storageMode==='cloud'&&!!window.IELTSSync?.config().enabled&&!!window.IELTSSync?.config().token;
-const progressSignature=s=>JSON.stringify({learned:s?.learned||{},results:s?.results||[]});
+const progressSignature=s=>JSON.stringify({learned:s?.learned||{},results:s?.results||[],favorites:s?.favorites||{},favoriteChanges:s?.favoriteChanges||{}});
 function rememberCloudSaved(s){cloudSavedSignature=progressSignature(s);cloudSavedState=s;}
-window.onCloudSyncSaved=s=>{const latest=C.mergeProgress(state,s);if(!persist(latest))return false;rememberCloudSaved(s);localStorage.setItem('ielts75-sync-dirty',progressSignature(latest)===progressSignature(s)?'0':'1');return true;};
+window.onCloudSyncSaved=s=>{const latest=C.mergeFavorites(C.mergeProgress(state,s),Object.entries(s.favoriteChanges||{}).map(([id,r])=>({id,...r})));if(!persist(latest))return false;rememberCloudSaved(s);localStorage.setItem('ielts75-sync-dirty',progressSignature(latest)===progressSignature(s)?'0':'1');return true;};
 window.hasUnsavedCloudProgress=()=>cloudMode()&&localStorage.getItem('ielts75-sync-dirty')==='1';
 function finishApp(){if(window.AndroidStore?.exitApp)AndroidStore.exitApp();else toast('可以关闭此页面了。');}
 window.requestAppExit=(after=finishApp)=>{
@@ -29,7 +29,7 @@ function btn(text,action,cls=''){const b=el('button',cls,text);b.onclick=action;
 function append(parent,...children){children.filter(x=>x!==null&&x!==undefined).forEach(x=>parent.append(x));return parent;}
 function toast(t){$('toast').textContent=t;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),4500);}
 window.onNativeStatus=t=>toast(t);
-function persist(next){try{C.validateState(next);const raw=JSON.stringify(next);if(window.AndroidStore){if(!AndroidStore.save(raw))throw Error('本地保存失败，请先导出备份并检查手机空间。');}else if(window.BrowserStore){BrowserStore.save(raw);}else localStorage.setItem('ielts75-state-v1',raw);state=next;if(cloudMode())localStorage.setItem('ielts75-sync-dirty','1');return true;}catch(e){toast(e.message);return false;}}
+function persist(next,progressChanged=true){try{C.validateState(next);const raw=JSON.stringify(next);if(window.AndroidStore){if(!AndroidStore.save(raw))throw Error('本地保存失败，请先导出备份并检查手机空间。');}else if(window.BrowserStore){BrowserStore.save(raw);}else localStorage.setItem('ielts75-state-v1',raw);state=next;if(progressChanged&&cloudMode())localStorage.setItem('ielts75-sync-dirty','1');return true;}catch(e){toast(e.message);return false;}}
 function rebuildQueue(){queue=C.learningQueue(state);}
 function speak(text,locale){if(window.AndroidStore)AndroidStore.speak(text,locale);else if('speechSynthesis' in window){const u=new SpeechSynthesisUtterance(text);u.lang=locale;u.rate=.85;speechSynthesis.cancel();speechSynthesis.speak(u);}else toast('设备没有可用语音，请检查语音设置。');}
 function setTab(t){if(t===tab)return;if(session&&session.index<session.questions.length&&!confirm('本轮复习尚未结束，已提交的结果会保留。离开本轮？'))return;session=null;tab=t;if(t!=='library')libraryCard=null;if(t!=='review'){historyDate='';historyCard=null;}render();window.scrollTo(0,0);}
@@ -47,7 +47,11 @@ function addSupplement(c,parent){
  if(note||formation){const block=el('section','extension-section');append(block,el('h3','','用法与构词补充'));if(note)append(block,el('p','',note));if(formation)append(block,el('p','',formation));append(body,block);}
  append(details,body);append(parent,details);
 }
-function addSingleCard(c,parent){const card=el('article','card');append(card,el('div','eyebrow','Sentence '+String(c.source.sentence).padStart(2,'0')));append(card,append(el('div','word-row'),el('h2','word',c.word)));
+function favoriteButton(c){
+ const star=btn('',()=>{if(persist(C.toggleFavorite(state,c.id))){refresh();toast(state.favorites?.[c.id]?'已收藏':'已取消收藏');}},'favorite-star');
+ function refresh(){const active=!!state.favorites?.[c.id];star.textContent=active?'★':'☆';star.classList.toggle('is-favorite',active);star.setAttribute('aria-label',active?'取消收藏':'收藏单词');star.setAttribute('aria-pressed',String(active));star.title=active?'取消收藏':'收藏单词';}refresh();return star;
+}
+function addSingleCard(c,parent){const card=el('article','card');append(card,append(el('div','card-heading'),el('div','eyebrow','Sentence '+String(c.source.sentence).padStart(2,'0')),favoriteButton(c)));append(card,append(el('div','word-row'),el('h2','word',c.word)));
  append(card,append(el('div','audio-row'),btn('▶ 英音',()=>speak(c.word,'en-GB'),'audio'),btn('▶ 美音',()=>speak(c.word,'en-US'),'audio')));
  append(card,section('Chinese Meaning',append(el('p','meaning'),el('span','meaning-pos',c.pos+' '),el('span','meaning-text',c.meaning))),section('English Definition',el('p','',c.definition)),section('Example',richExample(c.example,c.word),el('p','translation',c.exampleZh),btn('▶ 朗读例句',()=>speak(c.example,'en-GB'),'audio')));
  const coll=section('Key Collocations');c.collocations.forEach(x=>append(coll,append(el('div','collocation'),el('span','',x.en),el('span','',x.zh))));append(card,coll);append(parent,card);addSupplement(c,parent);
@@ -135,7 +139,7 @@ function renderSyncSettings(){
  append(panel,btn('登录账号',()=>connect(false),'primary wide'),btn('注册一个账号',()=>connect(true),'wide'),btn('改为仅本地使用',()=>{cloud.disconnect();storageMode='local';localStorage.setItem('ielts75-mode','local');render();},'text-button'));append(host,panel);
 }
 window.ieltsSyncState=()=>state;
-window.ieltsApplySync=(next,migrate=false)=>{const merged=migrate?next:C.mergeProgress(state,next);if(!persist(merged))return false;rebuildQueue();if(!session)render();return true;};
+window.ieltsApplySync=(next,migrate=false)=>{const merged=migrate?next:C.mergeFavorites(C.mergeProgress(state,next),Object.entries(next.favoriteChanges||{}).map(([id,r])=>({id,...r})));if(!persist(merged))return false;rebuildQueue();if(!session)render();return true;};
 function renderLearningOptions(){
  const plan=state.learningPlan,remaining=state.deck.cards.filter(c=>!state.learned[c.id]);
  const details=el('details','learning-options');details.id='learning-options';details.open=false;
@@ -187,7 +191,7 @@ function renderHistoryDay(){
 }
 function renderReview(){
  if(historyDate){renderHistoryDay();return;}
- const total=Object.keys(state.learned).length;const panel=el('section','panel');append(panel,el('h2','','按自己的节奏复习'),el('p','muted','已学 '+total+' 个词 · 单选或多选练习方式'));
+ const total=Object.keys(state.learned).length,favoriteTotal=C.favoriteWords(state).length;const panel=el('section','panel');append(panel,el('h2','','按自己的节奏复习'),el('p','muted','已学 '+total+' 个词 · 收藏 '+favoriteTotal+' 个词 · 单选或多选练习方式'));
  append(panel,el('div','subheading','练习方式'));
  const hints={meaning:'先回忆中文，再翻答案自评',spelling:'根据中文释义输入英文',cloze:'在英文例句中补全单词',conversion:'练习词族中的名词、动词等转换'};
  C.MODES.forEach(mode=>{const label=el('label','check-row');const input=el('input');input.type='checkbox';input.value=mode;input.name='mode';input.checked=reviewOptions.modes.includes(mode);input.onchange=()=>{reviewOptions.modes=[...panel.querySelectorAll('input[name=mode]:checked')].map(x=>x.value);};append(label,input,append(el('span'),document.createTextNode(names[mode]),el('small','',hints[mode])));append(panel,label);});
@@ -196,8 +200,15 @@ function renderReview(){
  const count=el('input');count.type='number';count.id='review-count';count.min='1';count.max=String(total);count.inputMode='numeric';count.value=String(Math.min(reviewOptions.count,total)||1);count.oninput=()=>reviewOptions.count=Number(count.value);append(panel,append(el('div','inline-field'),el('span','','随机复习'),count,el('span','','个词（不重复）')));
  const byDate=el('input');byDate.type='radio';byDate.name='scope';byDate.value='date';byDate.checked=reviewOptions.scope==='date';append(panel,append(el('label','check-row'),byDate,el('span','','只复习某日学习的单词')));
  const select=el('select');select.id='review-date';select.setAttribute('aria-label','学习日期');const dates=[...new Set(Object.values(state.learned).map(r=>r.date))].sort().reverse();dates.forEach(d=>{const o=el('option','',d+' · '+Object.values(state.learned).filter(r=>r.date===d).length+'词');o.value=d;append(select,o);});if(!dates.length)append(select,el('option','','暂无学习记录'));if(dates.includes(reviewOptions.date))select.value=reviewOptions.date;select.onchange=()=>reviewOptions.date=select.value;append(panel,select);
- function updateScope(){reviewOptions.scope=all.checked?'all':'date';count.disabled=!all.checked;select.disabled=all.checked;}all.onchange=updateScope;byDate.onchange=updateScope;updateScope();
- const start=btn('开始复习',()=>{try{const cards=C.selectWords(state,{scope:reviewOptions.scope,count:Number(count.value),date:select.value});const built=C.buildQuestions(cards,reviewOptions.modes);session={...built,index:0,wordCount:cards.length,answers:[],revealed:false};render();window.scrollTo(0,0);}catch(e){toast(e.message);}},'primary wide');start.disabled=total===0;append(panel,start);if(!total)append(panel,el('div','notice','先在“新词学习”中标记学会的单词，才会加入复习范围。'));append(panel,el('p','muted','多选会对每个词依次练习所选题型。不适用的填空或词性转换题会跳过并说明。'));append(host,panel);
+ const favorites=el('input');favorites.type='radio';favorites.name='scope';favorites.value='favorites';favorites.checked=reviewOptions.scope==='favorites';append(panel,append(el('label','check-row'),favorites,el('span','','从收藏单词中随机抽取')));
+ const favoriteCount=el('input');favoriteCount.type='number';favoriteCount.id='favorite-count';favoriteCount.min='1';favoriteCount.max=String(favoriteTotal);favoriteCount.inputMode='numeric';favoriteCount.setAttribute('aria-label','收藏随机复习数量');favoriteCount.value=String(Math.min(reviewOptions.favoriteCount,favoriteTotal)||1);favoriteCount.oninput=()=>reviewOptions.favoriteCount=Number(favoriteCount.value);append(panel,append(el('div','inline-field'),el('span','','随机复习'),favoriteCount,el('span','','个收藏词（不重复）')));
+ const favoriteRange=el('input');favoriteRange.type='radio';favoriteRange.name='scope';favoriteRange.value='favorites-range';favoriteRange.checked=reviewOptions.scope==='favorites-range';append(panel,append(el('label','check-row'),favoriteRange,el('span','','按起止英文单词复习收藏词')));
+ const range=el('div','favorite-range'),suggestions=el('datalist');suggestions.id='favorite-word-options';for(const c of C.favoriteWords(state)){const option=el('option');option.value=c.word;append(suggestions,option);}
+ function wordInput(id,label,value){const input=el('input');input.id=id;input.type='text';input.placeholder=label;input.value=value;input.autocomplete='off';input.autocapitalize='none';input.spellcheck=false;input.setAttribute('aria-label',label);input.setAttribute('list',suggestions.id);return input;}
+ const fromWord=wordInput('favorite-from','起始英文单词',reviewOptions.fromWord),toWord=wordInput('favorite-to','结束英文单词',reviewOptions.toWord);fromWord.oninput=()=>reviewOptions.fromWord=fromWord.value;toWord.oninput=()=>reviewOptions.toWord=toWord.value;append(range,fromWord,el('span','','至'),toWord);append(panel,range,suggestions,el('p','muted','按书本顺序，仅复习已收藏词，包含起止词；未学词也可收藏复习。收藏自动保存本地，云账号点击“同步进度”可同步收藏。'));
+ const start=btn('开始复习',()=>{try{const cards=C.selectWords(state,{scope:reviewOptions.scope,count:Number(favorites.checked?favoriteCount.value:count.value),date:select.value,fromWord:fromWord.value,toWord:toWord.value});const built=C.buildQuestions(cards,reviewOptions.modes);session={...built,index:0,wordCount:cards.length,answers:[],revealed:false};render();window.scrollTo(0,0);}catch(e){toast(e.message);}},'primary wide');
+ function updateScope(){reviewOptions.scope=panel.querySelector('input[name=scope]:checked').value;count.disabled=!all.checked;select.disabled=!byDate.checked;favoriteCount.disabled=!favorites.checked;fromWord.disabled=toWord.disabled=!favoriteRange.checked;start.disabled=(favorites.checked||favoriteRange.checked)?favoriteTotal===0:total===0;}for(const radio of [all,byDate,favorites,favoriteRange])radio.onchange=updateScope;updateScope();
+ append(panel,start);if(!total&&!favoriteTotal)append(panel,el('div','notice','标记学会的单词或收藏单词后，即可选择对应范围复习。'));append(panel,el('p','muted','多选会对每个词依次练习所选题型。不适用的填空或词性转换题会跳过并说明。'));append(host,panel);
  const recent=el('section','panel');append(recent,el('h2','','学习记录'));dates.forEach(d=>append(recent,btn(d+' · '+C.learnedOn(state,d).length+' 个新词 ›',()=>{historyDate=d;historyCard=null;render();window.scrollTo(0,0);},'wide history-day')));if(!dates.length)append(recent,el('p','muted','学过的每个词会记录首次学习日期。'));const r=state.results.filter(x=>x.date===C.localDate());if(r.length)append(recent,el('p','muted','今日已提交 '+r.length+' 题，其中答对／自评记得 '+r.filter(x=>x.correct).length+' 题'));append(host,recent);
 }
 function renderQuestion(){
@@ -206,7 +217,7 @@ function renderQuestion(){
  const line=el('div','row');append(line,el('span','eyebrow',names[q.mode]),btn('结束本轮',()=>{if(confirm('结束本轮？已提交结果会保留。')){session=null;render();}},'text-button'));append(host,line,el('div','stats',(session.index+1)+' / '+session.questions.length+' 题 · '+session.wordCount+' 个词'));
  const prog=el('progress');prog.max=session.questions.length;prog.value=session.index;append(host,prog);
  const skip=session.skipped.conversion+session.skipped.cloze;if(skip)append(host,el('div','notice','已跳过 '+session.skipped.conversion+' 道不适用的词性转换题、'+session.skipped.cloze+' 道不适用的填空题。'));
- const panel=el('section','panel');append(panel,el('div','eyebrow',sourceText(c)),el('div','quiz-prompt'+(q.mode==='meaning'?' word-prompt':''),q.prompt));
+ const panel=el('section','panel');append(panel,append(el('div','card-heading'),el('div','eyebrow',sourceText(c)),favoriteButton(c)),el('div','quiz-prompt'+(q.mode==='meaning'?' word-prompt':''),q.prompt));
  if(q.selfGrade){append(panel,el('p','muted','先在心里说出意思，再查看答案。'));if(!session.revealed)append(panel,btn('查看答案',()=>{session.revealed=true;render();},'primary wide'));else{append(panel,append(el('div','answer-box'),el('strong','',c.meaning),el('p','',c.definition)),append(el('div','actions'),btn('没记住',()=>submitResult(false)),btn('记得',()=>submitResult(true),'primary')));}}
  else if(!session.revealed){const input=el('input','answer-input');input.type='text';input.id='answer';input.autocomplete='off';input.autocapitalize='none';input.spellcheck=false;input.placeholder='输入英文答案';input.setAttribute('aria-label','英文答案');append(panel,input);const check=()=>{if(!input.value.trim()){toast('请输入答案，或点击“不会，查看答案”。');return;}session.userAnswer=input.value;session.correct=C.checkAnswer(input.value,q.answers);if(!recordResult(session.correct))return;session.revealed=true;render();};input.onkeydown=e=>{if(e.key==='Enter')check();};append(panel,btn('提交答案',check,'primary wide'),btn('不会，查看答案',()=>{session.userAnswer='（未作答）';session.correct=false;if(!recordResult(false))return;session.revealed=true;render();},'wide'));}
  else{const box=el('div','answer-box'+(session.correct?'':' wrong'));append(box,el('strong','',session.correct?'回答正确':'再记一次'),el('p','','你的答案：'+session.userAnswer),el('p','','参考答案：'+q.answers.join(' / ')),el('p','',c.meaning),el('p','',c.example),el('p','translation',c.exampleZh));append(panel,box,btn('▶ 听读单词',()=>speak(c.word,'en-GB'),'audio'),btn('下一题',()=>submitResult(session.correct),'primary wide'));}
